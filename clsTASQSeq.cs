@@ -5,7 +5,7 @@ using System.Timers;
 using TASQSrv.Data;
 using TASQSrv.Utilities;
 using TASQSrv.Data.dsQueueTableAdapters;
-//using TASCommon;
+using TASQSrv;
 namespace TASQSrv
 {
     internal class clsQueueSeq
@@ -42,40 +42,40 @@ namespace TASQSrv
         internal bool bDebugMode = true;
 		internal int iWCnt = 0;
 		internal int iSeqHB = 0;
-		//internal TASCommon.TSSettings tasset;
 		internal bool bIOBusy = false;
         internal string[] LASTDBGMSG= { "", "", "", "", "" };
         internal int iQCnt = 0;
         //private static string CrLf = "\r\n";
 		internal const int DefTmSQ = 500;
-		//internal const int DevGroupID = 0;
-		//internal const decimal MaxRemain = 200;
-		//internal const decimal MaxBatch = 40000; 
-
 		#endregion
 
 		private Timer tmSQStep;
+        private Timer tmWDG;
         private dsQueue DSQueue;
         private QueueTableAdapter QueueTA;
         private DEVICEIOTableAdapter DEVICEIOTA;
-
         private T_QUEUETableAdapter T_QUEUETA;
         private T_METER_QTableAdapter T_METER_QTA;
+        private PerformanceCounter cpuCounter;
+        private int iLastBay;
+        private float fCPULoad;
+        private TASSettings tasset;
 
-
-		private void InitializeComponent ( )
+        private void InitializeComponent ( )
 		{
 			this.tmSQStep = new Timer();
+            this.tmWDG = new Timer();
             this.DSQueue = new dsQueue();
             this.QueueTA = new QueueTableAdapter();
             this.DEVICEIOTA = new DEVICEIOTableAdapter();
-
             this.T_QUEUETA = new T_QUEUETableAdapter();
             this.T_METER_QTA = new T_METER_QTableAdapter();
-			// 
-			// tm...
-			// 
-			this.tmSQStep.Elapsed += new ElapsedEventHandler(this.tmSQStep_Tick);
+            this.cpuCounter = new PerformanceCounter();
+            // 
+            // tm...
+            // 
+            this.tmSQStep.Elapsed += new ElapsedEventHandler(this.tmSQStep_Tick);
+            this.tmWDG.Elapsed += new ElapsedEventHandler(this.tmWDG_Tick);
             // 
             this.DSQueue.DataSetName = "DSQueue";
             this.DSQueue.SchemaSerializationMode = System.Data.SchemaSerializationMode.IncludeSchema;
@@ -85,25 +85,29 @@ namespace TASQSrv
 			this.DEVICEIOTA.ClearBeforeFill = true;
             this.T_QUEUETA.ClearBeforeFill = true;
             this.T_METER_QTA.ClearBeforeFill = true;
-		}
+            //
+            // Performace Counter
+            //
+            this.cpuCounter.CategoryName = "Process";
+            this.cpuCounter.CounterName = "% Processor Time";
+            this.cpuCounter.InstanceName = this.sServiceName;
+        }
 
 		internal clsQueueSeq (string InputServiceName)
 		{
 			InitializeComponent();
             sServiceName = InputServiceName;
 			this.tmSQStep.Interval = DefTmSQ;
-			//tasset = new TSSettings(sServiceName);
+			this.tasset = new TASSettings(sServiceName);
 		}
         internal event EventHandler DebugMessageEvent;
 
 		internal void SvcStart ( string[] args )
 		{
             this.oraconn = this.T_METER_QTA.Connection;
-            //this.oraconn = new System.Data.OracleClient.OracleConnection();
-			//this.oraconn.ConnectionString = global::TASQSrv.Properties.Settings.Default.ConnectionString;
 			this.oraconn.StateChange += new StateChangeEventHandler(oraconn_StateChange);
 			this.bDataConn = (misc.ConnErr(this.oraconn) == string.Empty);
-			GetSettings();
+			//GetSettings();
 			DebugText("Application Started");
 			try
 			{
@@ -122,24 +126,25 @@ namespace TASQSrv
             DebugText("found " + this.DSQueue.T_QUEUE.Count.ToString() + " active queue.");
             iQCnt = this.DSQueue.T_QUEUE.Count;
 			this.tmSQStep.Enabled = true;
-			//this.tmRdrSQ.Enabled = true;
 		}
 
 		internal void SvcStop ( )
 		{
 			DebugText("Application exit");
-			this.tmSQStep.Enabled = false;
-			this.oraconn.Close();
+            this.tmSQStep.Enabled = false;
+            this.tmWDG.Enabled = false;
+            this.oraconn.Close();
 		}
 
 		void oraconn_StateChange ( object sender, StateChangeEventArgs e )
 		{
 			this.bDataConn = (e.CurrentState == ConnectionState.Open);
 			DebugText("DB Connection changed to :" + e.CurrentState.ToString());
-			//if(this.bDataConn)
-			//{
-			//	this.tasset.SetStatus(this.sServiceName + ".ConnSince", DateTime.Now.ToLongTimeString());
-			//}
+			if(this.bDataConn)
+			{
+				this.tasset.SetStatus(this.sServiceName + ".ConnSince", DateTime.Now.ToLongTimeString());
+                this.tmWDG.Enabled = true;
+			}
 		}
 
 
@@ -239,15 +244,59 @@ namespace TASQSrv
 			this.tmSQStep.Enabled = true;
 			iSeqHB = (iSeqHB >= 9999) ? 1 : iSeqHB + 1;
 		}
-
-		#endregion Timers
-		#region Debug text
-		internal void DebugText ( string txtLog )
+        private void tmWDG_Tick ( object sender, ElapsedEventArgs e )
+        {
+            switch (iWCnt)
+            {
+                case 0:
+                    this.tmWDG.Interval = (int)Properties.Settings.Default.tmWdog;
+                    DebugText("Watch Dog timer started");
+                    break;
+                case 4:
+                case 8:
+                    this.bDataConn = (misc.ConnErr(this.oraconn) == string.Empty);
+                    break;
+                case 12:
+                    this.tasset.SetStatus(this.sServiceName.Substring(0,5) + ".TimeStamp", DateTime.Now.ToString());
+                    break;
+                case 1:
+                case 5:
+                case 9:
+                    this.fCPULoad = this.cpuUsage();
+                    break;
+                case 2:
+                case 6:
+                case 10:
+                    float ftmp = this.cpuUsage();
+                    this.fCPULoad = (ftmp + this.fCPULoad) / 2;
+                    if (this.fCPULoad > 5)
+                    {
+                        this.DebugErrText(string.Format($"TASQu Service CPU Usage = {this.fCPULoad.ToString()}"));
+                    }
+                    break;
+            }
+            iWCnt = (iWCnt >= 12) ? 1 : iWCnt + 1;
+        }
+        private float cpuUsage()
+        {
+            if (this.bTestMode) return 1;
+            try
+            {
+                return this.cpuCounter.NextValue();
+            }
+            catch (Exception e)
+            {
+                this.DebugErrText(e.ToString());
+                return (float)-1.0;
+            }
+        }
+        #endregion Timers
+        #region Debug text
+        internal void DebugText ( string txtLog )
 		{
 			DebugText(txtLog, 0);
 		}
-        int iLastBay;
-		internal void DebugText ( string txtLog, int iBay )
+        internal void DebugText ( string txtLog, int iBay )
 		{
 			if(!(txtLog == sLastLog && iLastBay==iBay))
 			{
@@ -284,8 +333,6 @@ namespace TASQSrv
 		{
 
 			int iBayID = (int)bayq.METER_ID;
-            //dsQueue.LOADING_SQRow loadsq = this.DSQueue.LOADING_SQ.FindByBAYID(iBayID);
-
 			bool bBAuto = (bayq.Q_AUTO == "y"); //true if queue seq. is enable
             bool bBDryRun = (bayq.DRYRUN == "y");
             bool bBMaint = (bayq.MAINTENANCE == "y");
@@ -584,13 +631,11 @@ namespace TASQSrv
                 int imeterid = (int)b.METER_ID;
                 if (imeterid>0)
                 {
-                    if (b.MAINTENANCE == "y")
+                    if (b.MAINTENANCE == "y" || b.DRYRUN == "y")
                     {
                         iwait[imeterid - 1] = 99;
                         usablebay--;
                     }
-                    else if (b.DRYRUN == "y")
-                        iwait[imeterid - 1] = 30;
                     else if ((b.PROG_Q2 > 0) && (b.PROG_Q1 >= (b.PROG_Q2 - 200)) || b.STATUS == BS_Loaded)
                         iwait[imeterid - 1] = 5;
                     else if (b.PROG_Q2 > 5000)
@@ -608,11 +653,12 @@ namespace TASQSrv
             Array.Sort(iwait);
             int i = 0;
             int iwt=0;
+            usablebay = (usablebay == 0) ? 1 : usablebay;
             foreach (dsQueue.T_QUEUERow q in DSQueue.T_QUEUE.Rows)
             {
-                if(q.Q_STATUS==QS_Queued)
+                if(q.Q_STATUS==QS_Queued && q.DRYRUN == "n")
                 { 
-                    iwt = iwait[(i % 4)] + 60 * (int)(i/usablebay);
+                    iwt = iwait[(i % usablebay)] + 60 * (int)(i/usablebay);
                     if(q.WAIT_TM!=iwt)q.WAIT_TM = iwt;
                     i++;
                 }
