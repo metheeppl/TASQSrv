@@ -366,23 +366,17 @@ namespace TASQSrv
 
                                 if (bayq.SQ_TIMER > bayq.SET_AUTO_DELAY && bayq.SQ_NUMBER == 1)
                                 {
-                                    DataTable qtab = T_QUEUETA.GetDataByDRYRUN(bayq.DRYRUN);
+                                    dsQueue.T_QUEUEDataTable qtab= T_QUEUETA.GetDataBySTATUS(QS_Queued);
                                     if (qtab != null)
                                     {
                                         if (qtab.Rows.Count > 0)
                                         {
-                                            foreach (dsQueue.T_QUEUERow q1 in DSQueue.T_QUEUE.Rows)
-                                            {
-                                                if (q1.DRYRUN == bayq.DRYRUN && q1.Q_STATUS == QS_Queued)
-                                                {
-                                                    qrow = q1;
-                                                    break;
-                                                }
-                                            }
+                                            qrow = (dsQueue.T_QUEUERow)qtab.Rows[0];
                                             if (qrow != null)
                                             {
                                                 bayq.Q_ID = qrow.Q_ID;
                                                 bayq.STATUS = BS_Calling;
+                                                bayq.DRYRUN = qrow.DRYRUN;
                                                 DEBUG_MSG = "Auto-Assign Event";
                                                 qrow.METER_ID = iBayID;
                                                 qrow.Q_STATUS = QS_Calling;
@@ -631,11 +625,13 @@ namespace TASQSrv
                 int imeterid = (int)b.METER_ID;
                 if (imeterid>0)
                 {
-                    if (b.MAINTENANCE == "y" || b.DRYRUN == "y")
+                    if (b.MAINTENANCE == "y")
                     {
                         iwait[imeterid - 1] = 99;
                         usablebay--;
                     }
+                    else if( b.DRYRUN == "y")
+                        iwait[imeterid - 1] = 20;
                     else if ((b.PROG_Q2 > 0) && (b.PROG_Q1 >= (b.PROG_Q2 - 200)) || b.STATUS == BS_Loaded)
                         iwait[imeterid - 1] = 5;
                     else if (b.PROG_Q2 > 5000)
@@ -656,7 +652,7 @@ namespace TASQSrv
             usablebay = (usablebay == 0) ? 1 : usablebay;
             foreach (dsQueue.T_QUEUERow q in DSQueue.T_QUEUE.Rows)
             {
-                if(q.Q_STATUS==QS_Queued && q.DRYRUN == "n")
+                if(q.Q_STATUS==QS_Queued)
                 { 
                     iwt = iwait[(i % usablebay)] + 60 * (int)(i/usablebay);
                     if(q.WAIT_TM!=iwt)q.WAIT_TM = iwt;

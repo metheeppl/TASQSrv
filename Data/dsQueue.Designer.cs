@@ -3944,10 +3944,11 @@ ORDER BY Q_ID";
             this._adapter.TableMappings.Add(tableMapping);
             this._adapter.UpdateCommand = new global::System.Data.OracleClient.OracleCommand();
             this._adapter.UpdateCommand.Connection = this.Connection;
-            this._adapter.UpdateCommand.CommandText = @"UPDATE       T_METER_Q
-SET                MAINTENANCE = :MAINTENANCE, PROG_Q1 = :PROG_Q1, PROG_Q2 = :PROG_Q2, PROG_T1 = :PROG_T1, PROG_T2 = :PROG_T2, STATUS = :STATUS, Q_ID = :Q_ID, DEBUG_MSG = :DEBUG_MSG, MSG2 = :MSG2, 
-                         MSG1 = :MSG1, SQ_TIMER = :SQ_TIMER, SQ_NUMBER = :SQ_NUMBER, SQ_START = :SQ_START, SQ_TARE = :SQ_TARE, P_Q_ID = :P_Q_ID, CNT = :CNT
-WHERE        (METER_ID = :METER_ID)";
+            this._adapter.UpdateCommand.CommandText = @"UPDATE  T_METER_Q
+SET              MAINTENANCE = :MAINTENANCE, PROG_Q1 = :PROG_Q1, PROG_Q2 = :PROG_Q2, PROG_T1 = :PROG_T1, PROG_T2 = :PROG_T2, STATUS = :STATUS, Q_ID = :Q_ID, 
+                         DEBUG_MSG = :DEBUG_MSG, MSG2 = :MSG2, MSG1 = :MSG1, SQ_TIMER = :SQ_TIMER, SQ_NUMBER = :SQ_NUMBER, SQ_START = :SQ_START, SQ_TARE = :SQ_TARE, P_Q_ID = :P_Q_ID, 
+                         CNT = :CNT, DRYRUN = :DRYRUN
+WHERE     (METER_ID = :METER_ID)";
             this._adapter.UpdateCommand.CommandType = global::System.Data.CommandType.Text;
             this._adapter.UpdateCommand.Parameters.Add(new global::System.Data.OracleClient.OracleParameter("MAINTENANCE", global::System.Data.OracleClient.OracleType.VarChar, 1, global::System.Data.ParameterDirection.Input, "MAINTENANCE", global::System.Data.DataRowVersion.Current, false, null));
             this._adapter.UpdateCommand.Parameters.Add(new global::System.Data.OracleClient.OracleParameter("PROG_Q1", global::System.Data.OracleClient.OracleType.Number, 22, global::System.Data.ParameterDirection.Input, "PROG_Q1", global::System.Data.DataRowVersion.Current, false, null));
@@ -3965,6 +3966,7 @@ WHERE        (METER_ID = :METER_ID)";
             this._adapter.UpdateCommand.Parameters.Add(new global::System.Data.OracleClient.OracleParameter("SQ_TARE", global::System.Data.OracleClient.OracleType.Number, 22, global::System.Data.ParameterDirection.Input, "SQ_TARE", global::System.Data.DataRowVersion.Current, false, null));
             this._adapter.UpdateCommand.Parameters.Add(new global::System.Data.OracleClient.OracleParameter("P_Q_ID", global::System.Data.OracleClient.OracleType.Number, 22, global::System.Data.ParameterDirection.Input, "P_Q_ID", global::System.Data.DataRowVersion.Current, false, null));
             this._adapter.UpdateCommand.Parameters.Add(new global::System.Data.OracleClient.OracleParameter("CNT", global::System.Data.OracleClient.OracleType.Number, 22, global::System.Data.ParameterDirection.Input, "CNT", global::System.Data.DataRowVersion.Current, false, null));
+            this._adapter.UpdateCommand.Parameters.Add(new global::System.Data.OracleClient.OracleParameter("DRYRUN", global::System.Data.OracleClient.OracleType.VarChar, 1, global::System.Data.ParameterDirection.Input, "DRYRUN", global::System.Data.DataRowVersion.Current, false, null));
             this._adapter.UpdateCommand.Parameters.Add(new global::System.Data.OracleClient.OracleParameter("METER_ID", global::System.Data.OracleClient.OracleType.Number, 22, global::System.Data.ParameterDirection.Input, "METER_ID", global::System.Data.DataRowVersion.Original, false, null));
         }
         
@@ -4062,6 +4064,7 @@ ORDER BY CNT, METER_ID";
                     decimal SQ_TARE, 
                     decimal P_Q_ID, 
                     decimal CNT, 
+                    string DRYRUN, 
                     decimal METER_ID) {
             if ((MAINTENANCE == null)) {
                 throw new global::System.ArgumentNullException("MAINTENANCE");
@@ -4109,7 +4112,13 @@ ORDER BY CNT, METER_ID";
             this.Adapter.UpdateCommand.Parameters[13].Value = ((decimal)(SQ_TARE));
             this.Adapter.UpdateCommand.Parameters[14].Value = ((decimal)(P_Q_ID));
             this.Adapter.UpdateCommand.Parameters[15].Value = ((decimal)(CNT));
-            this.Adapter.UpdateCommand.Parameters[16].Value = ((decimal)(METER_ID));
+            if ((DRYRUN == null)) {
+                throw new global::System.ArgumentNullException("DRYRUN");
+            }
+            else {
+                this.Adapter.UpdateCommand.Parameters[16].Value = ((string)(DRYRUN));
+            }
+            this.Adapter.UpdateCommand.Parameters[17].Value = ((decimal)(METER_ID));
             global::System.Data.ConnectionState previousConnectionState = this.Adapter.UpdateCommand.Connection.State;
             if (((this.Adapter.UpdateCommand.Connection.State & global::System.Data.ConnectionState.Open) 
                         != global::System.Data.ConnectionState.Open)) {
