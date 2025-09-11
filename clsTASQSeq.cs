@@ -6,6 +6,7 @@ using TASQSrv.Data;
 using TASQSrv.Utilities;
 using TASQSrv.Data.dsQueueTableAdapters;
 using TASQSrv;
+using System.Runtime.Remoting.Metadata.W3cXsd2001;
 namespace TASQSrv
 {
     internal class clsQueueSeq
@@ -344,6 +345,7 @@ namespace TASQSrv
             string MSG1 = string.Empty;
             string MSG2 = string.Empty;
 			string DEBUG_MSG = string.Empty;
+            decimal QNTY;
             if (!bBMaint)
             {
                 dsQueue.T_QUEUERow qrow=null;
@@ -359,6 +361,11 @@ namespace TASQSrv
                                 {
                                     bayq.SQ_NUMBER = 1;
                                     bayq.SQ_TIMER = 0;
+                                    bayq.DRYRUN = "n";
+                                    bayq.PROG_Q1 = 0;
+                                    bayq.PROG_Q2 = 0;
+                                    bayq.PROG_T1 = 0;
+                                    bayq.PROG_T2 = 0;
                                     DEBUG_MSG = "Empty Timer Started";
                                 }// init timer
                                 else
@@ -366,30 +373,23 @@ namespace TASQSrv
 
                                 if (bayq.SQ_TIMER > bayq.SET_AUTO_DELAY && bayq.SQ_NUMBER == 1)
                                 {
-                                    dsQueue.T_QUEUEDataTable qtab= T_QUEUETA.GetDataBySTATUS(QS_Queued);
-                                    if (qtab != null)
+                                    qrow = null;
+                                    foreach(dsQueue.T_QUEUERow row in DSQueue.T_QUEUE.Rows)
                                     {
-                                        if (qtab.Rows.Count > 0)
-                                        {
-                                            qrow = (dsQueue.T_QUEUERow)qtab.Rows[0];
-                                            if (qrow != null)
-                                            {
-                                                bayq.Q_ID = qrow.Q_ID;
-                                                bayq.STATUS = BS_Calling;
-                                                bayq.DRYRUN = qrow.DRYRUN;
-                                                DEBUG_MSG = "Auto-Assign Event";
-                                                qrow.METER_ID = iBayID;
-                                                qrow.Q_STATUS = QS_Calling;
-                                                qrow.WAIT_TM = 0;
-                                            }
-                                            else
-                                                DEBUG_MSG = "No Queue Match";
-                                        }
-                                        else
-                                            DEBUG_MSG = "No Queue Row";
+                                        if (row.Q_STATUS == "QUEUED")
+                                        { qrow = row; break; }
                                     }
-                                    else
-                                        DEBUG_MSG = "No Queue Table";
+
+                                    if (qrow != null)
+                                    {
+                                        bayq.Q_ID = qrow.Q_ID;
+                                        bayq.STATUS = BS_Calling;
+                                        bayq.DRYRUN = qrow.DRYRUN;
+                                        DEBUG_MSG = "Auto-Assign Event";
+                                        qrow.METER_ID = iBayID;
+                                        qrow.Q_STATUS = QS_Calling;
+                                        qrow.WAIT_TM = 0;
+                                    }
                                 }// timer>10
                             }
 
@@ -418,6 +418,8 @@ namespace TASQSrv
                                 qrow = DSQueue.T_QUEUE.FindByQ_ID(bayq.Q_ID);
                                 if (qrow != null)
                                 {
+                                    bayq.DRYRUN = qrow.DRYRUN;
+                                    bayq.STATUS = (qrow.DRYRUN=="y") ? BS_DryRun : BS_Ready;
                                     qrow.Q_STATUS = bayq.STATUS;
                                     qrow.TS_PARK = DateTime.Now;
                                     qrow.WAIT_TM = 0;
@@ -430,7 +432,7 @@ namespace TASQSrv
                         break;
 // *** Ready Status ***
                     case BS_Ready:
-                        decimal QNTY = decimal.Parse(ReadIO(bayq, ION_QNTY));
+                        QNTY = decimal.Parse(ReadIO(bayq, ION_QNTY));
                         string FL01 = ReadIO(bayq, "FL01");
                         // Loading
                         if (SQSTEP==3)
@@ -441,7 +443,7 @@ namespace TASQSrv
                             qrow = DSQueue.T_QUEUE.FindByQ_ID(bayq.Q_ID);
                             if (qrow != null)
                             {
-                                if (bayq.SQ_TARE == 0 && QNTY > 0)
+                                if (QNTY > 1000 && bayq.PROG_Q2 == 0)
                                 {
                                     float qnty = (float)QNTY;
                                     float rate = (float)bayq.SET_FLOW_RATE;
@@ -451,8 +453,11 @@ namespace TASQSrv
                                     bayq.PROG_T1 = 0;
                                     bayq.PROG_T2 = (decimal)loadtime;
                                 }
+                                if (bayq.SQ_TARE == 0)
+                                {
+                                    bayq.SQ_TARE = WGH;
+                                }
                                 qrow.Q_STATUS = QS_Loading;
-                                bayq.SQ_TARE = WGH;
                             }
                         }
                         // Card In
@@ -543,19 +548,47 @@ namespace TASQSrv
                         {
                             DEBUG_MSG = "(Loading)Batch End Event";
                         }
+                        else if (WGH < bayq.SET_FINISH_WEIGHT)
+                        {
+                            if (bayq.SQ_NUMBER != 5)
+                            {
+                                bayq.SQ_NUMBER = 5;
+                                bayq.SQ_TIMER = 0;
+                                DEBUG_MSG = "Loaded Timer Started";
+                            }// init timer
+                            else
+                                bayq.SQ_TIMER = bayq.SQ_TIMER + 1;
+                            if (bayq.SQ_TIMER > 30 && bayq.SQ_NUMBER == 5)
+                            {
+                                bayq.STATUS = BS_Loaded;
+                                DEBUG_MSG = "Loaded status without weight.";
+                                qrow = DSQueue.T_QUEUE.FindByQ_ID(bayq.Q_ID);
+                                if (qrow != null)
+                                {
+                                    qrow.Q_STATUS = QS_Loaded;
+                                }
+                            }
+                        }
                         // Loading + no event
                         else
                         {
+                            QNTY = decimal.Parse(ReadIO(bayq, ION_QNTY));
+                            if (QNTY > 1000 && bayq.PROG_Q2 == 0)
+                            {
+                                bayq.PROG_Q2 = QNTY;
+                            }
                             bayq.PROG_Q1 = WGH - bayq.SQ_TARE;
                             int t1 = (int)(DateTime.Now.Subtract(bayq.SQ_START)).TotalMinutes;
                             if (t1 > 2)
                             {
                                 float rate = (float)bayq.PROG_Q1 / t1;
+                                t1= (t1 > MAX_PROG) ? MAX_PROG : t1;
                                 if (rate < 50) rate = 50;
                                 int t2 = t1 + (int)(((float)(bayq.PROG_Q2 - bayq.PROG_Q1)) / rate);
+                                t2 = (t2 < t1) ? t1 : t2;
                                 bayq.PROG_T2 = (t2 > MAX_PROG) ? MAX_PROG : t2 ;
                             }
-                            bayq.PROG_T1 = (t1 > MAX_PROG) ? MAX_PROG : t1 ;
+                            bayq.PROG_T1 = t1 ;
                             if(bayq.PROG_Q1>100)
                                 if (bayq.SQ_NUMBER != 3)
                                 // Batch count
@@ -595,6 +628,7 @@ namespace TASQSrv
                                     qrow.TS_EXIT = DateTime.Now;
                                 }
                                 bayq.Q_ID = 0;
+                                bayq.DRYRUN = "n";
                             }
                         }
                         else
