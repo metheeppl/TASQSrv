@@ -548,25 +548,21 @@ namespace TASQSrv
                         {
                             DEBUG_MSG = "(Loading)Batch End Event";
                         }
+                        // Loading with zero weight
                         else if (WGH < bayq.SET_FINISH_WEIGHT)
                         {
                             if (bayq.SQ_NUMBER != 5)
                             {
                                 bayq.SQ_NUMBER = 5;
                                 bayq.SQ_TIMER = 0;
-                                DEBUG_MSG = "Loaded Timer Started";
+                                DEBUG_MSG = "No weight timer started";
                             }// init timer
                             else
                                 bayq.SQ_TIMER = bayq.SQ_TIMER + 1;
-                            if (bayq.SQ_TIMER > 30 && bayq.SQ_NUMBER == 5)
+                            if (bayq.SQ_TIMER > 120 && bayq.SQ_NUMBER == 5)
                             {
-                                bayq.STATUS = BS_Loaded;
-                                DEBUG_MSG = "Loaded status without weight.";
-                                qrow = DSQueue.T_QUEUE.FindByQ_ID(bayq.Q_ID);
-                                if (qrow != null)
-                                {
-                                    qrow.Q_STATUS = QS_Loaded;
-                                }
+                                DEBUG_MSG = "Loading without weight";
+                                bayq.SQ_TIMER = 0;
                             }
                         }
                         // Loading + no event
